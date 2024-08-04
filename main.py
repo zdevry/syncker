@@ -66,6 +66,24 @@ def parse_args():
     sync_sp.set_defaults(subcmd='sync')
     sync_sp.add_argument('file')
 
+    backup_sp = sp.add_parser('backup')
+    backup_sp.set_defaults(subcmd='backup')
+    backup_sp.add_argument('drive_file')
+
+    backup_sp = sp.add_parser('download')
+    backup_sp.set_defaults(subcmd='download')
+    backup_sp.add_argument('drive_file')
+
+    update_sp = sp.add_parser('update')
+    update_sp.set_defaults(subcmd='update')
+    update_sp.add_argument('drive_file')
+    update_sp.add_argument('local_file')
+
+    upload_sp = sp.add_parser('upload')
+    upload_sp.set_defaults(subcmd='upload')
+    upload_sp.add_argument('local_file')
+    upload_sp.add_argument('drive_folder')
+
     return p.parse_args()
 
 def main():
@@ -82,7 +100,7 @@ def main():
             gdrive.list_index(index['drive_files'])
             return
         case 'unindex':
-            gdrive.unindex(args.unindex_file, index['drive_files'])
+            gdrive.unindex(args.unindex_file, index)
             save_index_file(index)
             return
         case 'link':
@@ -103,6 +121,15 @@ def main():
             save_index_file(index)
         case 'sync':
             gdrive.sync_index(service, args.file, index)
+        case 'backup':
+            gdrive.backup_index(service, args.drive_file, index['drive_files'])
+        case 'download':
+            gdrive.download_index(service, args.drive_file, index['drive_files'])
+        case 'update':
+            gdrive.update_direct(service, args.drive_file, args.local_file, index['drive_files'])
+        case 'upload':
+            gdrive.upload_and_index(service, args.drive_folder, args.local_file, index)
+            save_index_file(index)
 
 if __name__ == '__main__':
     try:
@@ -113,3 +140,7 @@ if __name__ == '__main__':
     except gdrive.DrivePathError as err:
         print('Drive path error:', err)
         exit(1)
+    except FileExistsError as err:
+        print('File error:', err)
+    except FileNotFoundError as err:
+        print('File error:', err)

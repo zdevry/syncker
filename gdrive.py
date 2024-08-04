@@ -1,6 +1,8 @@
 import os
+from io import FileIO
+from datetime import datetime
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 class DrivePathError(Exception):
     pass
@@ -48,12 +50,24 @@ def index(service, drive_file_path, root_folder_ref):
         curr_file_ref[f_name] = indexed_file
         curr_file_ref = indexed_file
 
-def unindex(drive_file_path, root_folder_ref):
+def unlink_files(f, links):
+    if not f['__gdrive_folder']:
+        if 'link' in f:
+            link_path = f['link']
+            links.pop(link_path, None)
+        return
+
+    for subf in f:
+        if subf == '__gdrive_id' or subf == '__gdrive_folder':
+            continue
+        unlink_files(f[subf], links)
+
+def unindex(drive_file_path, index):
     folders = get_folder_seq(drive_file_path)
     if len(folders) == 0:
         raise DrivePathError(f'Cannot unindex Drive root folder')
-    curr_folder_ref = root_folder_ref
-    prev_folder_ref = root_folder_ref
+    curr_folder_ref = index['drive_files']
+    prev_folder_ref = index['drive_files']
     for f_name in folders:
         if not curr_folder_ref['__gdrive_folder']:
             raise DrivePathError(f'"{f_name}" is not a folder')
@@ -62,6 +76,7 @@ def unindex(drive_file_path, root_folder_ref):
         prev_folder_ref = curr_folder_ref
         curr_folder_ref = curr_folder_ref[f_name]
 
+    unlink_files(curr_folder_ref, index['links'])
     prev_folder_ref.pop(folders[-1], None)
 
 def list_index(folder, depth=0):
@@ -126,6 +141,10 @@ def sync_index(service, path, index):
     drive_file = get_linked(path, index)
     local_link = drive_file['link']
 
+    if not os.path.exists(local_link):
+        raise FileNotFoundError(
+            f'{shorten_file_in_home(local_link)} no longer exists, consider unlinking with `syncker unlink`')
+
     drive_path = index['links'][local_link]
     print(f'Syncing {drive_path} with {shorten_file_in_home(local_link)}')
 
@@ -133,3 +152,86 @@ def sync_index(service, path, index):
     service.files() \
         .update(fileId=drive_file['__gdrive_id'], media_body=file_data) \
         .execute()
+
+def get_filename_by_id(service, id):
+    return service.files().get(fileId=id).execute()['name']
+
+def backup_index(service, drive_file_path, root_folder):
+    original_file = get_indexed(drive_file_path, root_folder)
+    if original_file['__gdrive_folder']:
+        raise DrivePathError('Cannot backup a folder')
+
+    original_filename = get_filename_by_id(service, original_file['__gdrive_id'])
+
+    backup_filename = datetime.today().strftime('BACKUP-%Y%m%d-%H%M%S-') + original_filename
+    print(f'Backing up {drive_file_path} to {backup_filename} ...')
+    service.files() \
+        .copy(fileId=original_file['__gdrive_id'], body={'name': backup_filename}) \
+        .execute()
+
+def download_index(service, drive_file_path, root_folder):
+    file = get_indexed(drive_file_path, root_folder)
+    filename = get_filename_by_id(service, file['__gdrive_id'])
+    if os.path.exists(filename):
+        raise FileExistsError(f'{filename} already exists in current working directory')
+
+    request = service.files().get_media(fileId=file['__gdrive_id'])
+    with open(filename, 'wb') as f:
+        download = MediaIoBaseDownload(f, request)
+
+        print('Start downloading...')
+        done = False
+        while not done:
+            status, done = download.next_chunk()
+            if status:
+                percent = int(status.progress() * 100)
+                print(f'Downloading {percent}%')
+        print('Download complete')
+
+def update_direct(service, drive_file_path, local_file_path, root_folder):
+    if not os.path.exists(local_file_path):
+        raise FileNotFoundError(f'"{local_file_path}" does not exist')
+
+    drive_file = get_indexed(drive_file_path, root_folder)
+    print(f'Updating {drive_file_path} with {local_file_path}')
+
+    file_data = MediaFileUpload(local_file_path)
+    service.files() \
+        .update(fileId=drive_file['__gdrive_id'], media_body=file_data) \
+        .execute()
+
+def upload_and_index(service, drive_folder_path, local_file_path, index):
+    if not os.path.exists(local_file_path):
+        raise FileNotFoundError(f'"{local_file_path}" does not exist')
+
+    drive_folder = get_indexed(drive_folder_path, index['drive_files'])
+    if not drive_folder['__gdrive_folder']:
+        raise DrivePathError(f'"{drive_folder_path}" is not a folder')
+
+    file_basename = os.path.basename(local_file_path)
+    file_metadata = {
+        'name': file_basename,
+        'parents': [drive_folder['__gdrive_id']]
+    }
+
+    print(f'Uploading {local_file_path} to {drive_folder_path}')
+
+    file_data = MediaFileUpload(local_file_path)
+    file_id = service.files() \
+        .create(body=file_metadata, media_body=file_data) \
+        .execute()['id']
+
+
+    drive_file_path = \
+        drive_folder_path \
+        + ('' if drive_folder_path.endswith('/') else '/') \
+        + file_basename
+    print(f'Indexing and linking {drive_file_path}')
+
+    local_abspath = os.path.abspath(local_file_path)
+    drive_folder[file_basename] = {
+        '__gdrive_id': file_id,
+        '__gdrive_folder': False,
+        'link': local_abspath
+    }
+    index['links'][local_abspath] = drive_file_path
