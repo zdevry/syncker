@@ -9,7 +9,7 @@ dependencies = [
 requires-python = ">= 3.12"
 
 [project.scripts]
-syncker = "syncker.main:main"
+syncker = "main:main"
 
 [build-system]
 requires = ["setuptools >= 61.0"]
