@@ -1,0 +1,16 @@
+[project]
+name = "syncker"
+version = "0.1.0"
+dependencies = [
+    "google-api-python-client>=2.139.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.1",
+]
+requires-python = ">= 3.12"
+
+[project.scripts]
+syncker = "syncker.main:main"
+
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
