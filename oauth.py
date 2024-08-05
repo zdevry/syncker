@@ -1,4 +1,4 @@
-import os.path
+from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -13,19 +13,19 @@ def write_creds_to_token_file(creds, token_file):
         f.write(creds.to_json())
 
 def authenticate(cred_dir):
-    client_secrets_file = cred_dir + '/client_secrets.json'
-    if not os.path.exists(client_secrets_file):
+    client_secrets_file = cred_dir / 'client_secrets.json'
+    if not Path.exists(client_secrets_file):
         raise AuthenticationError('OAuth client secret is not present, generate one using the Google Cloud Console')
 
     flow = InstalledAppFlow.from_client_secrets_file(client_secrets_file, OAUTH_SCOPES)
     new_creds = flow.run_local_server(open_browser=False)
 
-    token_file = cred_dir + '/token.json'
+    token_file = cred_dir / 'token.json'
     write_creds_to_token_file(new_creds, token_file)
 
 def get_credentials(cred_dir):
-    token_file = cred_dir + '/token.json'
-    if not os.path.exists(token_file):
+    token_file = cred_dir / 'token.json'
+    if not Path.exists(token_file):
         raise AuthenticationError('User token is not present, run `syncker auth` to perform authentication')
         exit(1)
 
